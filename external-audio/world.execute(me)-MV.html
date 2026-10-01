@@ -1,0 +1,1741 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>world.execute(me); — Canvas MV</title>
+<style>
+  :root{
+    --cyan:#6ef7ff; --pink:#ff6ac1; --violet:#b58cff; --ink:#05070d;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#000;}
+  body{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;user-select:none;-webkit-user-select:none;}
+  canvas#c{position:fixed;inset:0;width:100vw;height:100vh;display:block;cursor:crosshair;}
+  .overlay{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;transition:opacity .8s ease,visibility .8s ease;background:rgba(3,5,12,.55);backdrop-filter:blur(6px);}
+  .overlay.hidden{opacity:0;visibility:hidden;pointer-events:none;}
+  #start{cursor:pointer;}
+  .bootbar{width:min(420px,70vw);height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);box-shadow:0 0 12px var(--cyan);animation:scan 1.8s ease-in-out infinite;}
+  @keyframes scan{0%,100%{transform:scaleX(.35);opacity:.35;}50%{transform:scaleX(1);opacity:1;}}
+  .title{font-family:Consolas,"Cascadia Mono","Microsoft YaHei",monospace;font-weight:700;font-size:clamp(30px,6.4vw,76px);color:#f5faff;letter-spacing:.06em;text-shadow:0 0 14px #53e6ff,0 0 34px #7a5cff;animation:titlepulse 2.6s ease-in-out infinite;}
+  .title b{color:var(--pink);font-weight:700;}
+  @keyframes titlepulse{0%,100%{text-shadow:0 0 14px #53e6ff,0 0 34px #7a5cff;}50%{text-shadow:0 0 22px #9ef8ff,0 0 60px #ff6ac1;}}
+  .subtitle{font-family:Consolas,monospace;color:#b9d6ff;letter-spacing:.34em;font-size:clamp(12px,2vw,18px);}
+  .kawaii{color:#ffe6f6;font-size:clamp(14px,2.4vw,22px);letter-spacing:.12em;opacity:.92;}
+  .startbtn{font-family:Consolas,"Microsoft YaHei",monospace;font-size:clamp(14px,2.6vw,20px);color:#031018;background:linear-gradient(135deg,#8dfcff,#7da8ff 55%,#ff8fd8);padding:12px 34px;border-radius:999px;font-weight:700;letter-spacing:.12em;box-shadow:0 0 26px rgba(120,220,255,.65),0 0 60px rgba(255,120,215,.35);transition:transform .2s ease,box-shadow .2s ease;}
+  #start:hover .startbtn{transform:scale(1.06);box-shadow:0 0 36px rgba(140,240,255,.9),0 0 80px rgba(255,120,215,.55);}
+  .hint{color:#7f96b5;font-size:12px;letter-spacing:.12em;}
+  #replay .title{font-size:clamp(26px,5vw,58px);}
+  .errbox{max-width:min(620px,86vw);background:rgba(40,4,12,.8);border:1px solid #ff4d6d;padding:22px 28px;border-radius:14px;color:#ffd9e0;font-family:Consolas,monospace;line-height:1.7;font-size:14px;}
+  #controls{position:fixed;right:14px;bottom:12px;z-index:40;display:flex;align-items:center;gap:10px;color:#8ea9c8;font-family:Consolas,monospace;font-size:12px;opacity:.65;transition:opacity .3s;}
+  #controls:hover{opacity:1;}
+  #btnPlay{cursor:pointer;border:1px solid rgba(140,190,255,.5);background:rgba(8,14,26,.55);color:#cfe8ff;border-radius:999px;width:34px;height:34px;font-size:14px;line-height:1;}
+  #time{letter-spacing:.08em;}
+  .noscript{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:#000;z-index:99;font-family:Consolas,monospace;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="start" class="overlay" role="button" aria-label="开始播放">
+  <div class="bootbar"></div>
+  <div class="title">world.execute(<b>me</b>);</div>
+  <div class="subtitle">M I L I&nbsp;&nbsp;·&nbsp;&nbsp;C A N V A S&nbsp;&nbsp;M V</div>
+  <div class="kawaii">(๑•̀ㅂ•́)و✧ &nbsp;&nbsp;(=^･ω･^=) &nbsp;&nbsp;(´｡• ᵕ •｡`)</div>
+  <div class="startbtn">▶&nbsp; 点 击 执 行</div>
+  <div class="hint">Chrome / Edge · 耳机体验 · F 全屏 · Space 暂停 · M 静音</div>
+</div>
+
+<div id="replay" class="overlay hidden">
+  <div class="title">world.execute(<b>me</b>);</div>
+  <div class="kawaii">(´｡• ᵕ •｡`) 播放完毕 ♡</div>
+  <div class="startbtn" id="replayBtn">↻&nbsp; 再 执 行 一 次</div>
+</div>
+
+<div id="error" class="overlay hidden">
+  <div class="errbox" id="errMsg">音频加载失败，请确认浏览器允许自动播放或重新打开本文件。</div>
+</div>
+
+<div id="controls">
+  <button id="btnPlay" title="播放/暂停 (Space)">⏸</button>
+  <span id="time">0:00 / 0:00</span>
+</div>
+
+<script>
+'use strict';
+/* ============ 音频：完整内嵌 MP3 ============ */
+const AUDIO_SRC = "audio.mp3";
+
+/* ============ 歌词 ============ */
+const LYRICS_RAW = `{"t":0,"c":[{"tx":"作曲: "},{"tx":"Mili"},{"tx":"/"},{"tx":"Cassie Wei"}]}
+{"t":50,"c":[{"tx":"作词: "},{"tx":"Mili"}]}
+[00:00.100]Switch on the power line
+[00:01.740]Remember to put on
+[00:02.920]PROTECTION
+[00:03.873]Lay down your pieces
+[00:05.491]And let's begin
+[00:06.380]OBJECT CREATION
+[00:07.446]Fill in my data parameters
+[00:10.091]INITIALIZATION
+[00:11.095]Set up our new world
+[00:12.906]And let's begin the
+[00:13.891]SIMULATION
+[00:16.000]world.execute(me);
+[00:29.709]If I'm a set of points
+[00:31.116]Then I will give you my
+[00:32.682]DIMENSION
+[00:33.412]If I'm a circle
+[00:34.646]Then I will give you my
+[00:36.287]CIRCUMFERENCE
+[00:37.067]If I'm a sine wave
+[00:38.596]Then you can sit on all my
+[00:40.049]TANGENTS
+[00:40.706]If I approach infinity
+[00:42.346]Then you can be my
+[00:43.507]LIMITATIONS
+[00:44.452]Switch my current
+[00:45.850]To AC to DC
+[00:47.672]And then blind my vision
+[00:49.534]So dizzy so dizzy
+[00:51.363]Oh we can travel
+[00:53.225]To A.D to B.C
+[00:55.083]And we can unite
+[00:56.916]So deeply so deeply
+[00:59.223]If I can
+[00:59.687]If I can give you all the
+[01:01.958]STIMULATIONS
+[01:02.589]Then I can
+[01:03.535]Then I can be your only
+[01:05.397]SATISFACTION
+[01:06.601]If I can make you happy
+[01:08.252]I will run the
+[01:09.259]EXECUTION
+[01:10.084]Though we are trapped
+[01:11.764]In this strange strange
+[01:13.169]SIMULATION
+[01:14.045]If I'm an eggplant
+[01:15.422]Then I will give you my
+[01:16.959]NUTRIENTS
+[01:17.576]If I'm a tomato
+[01:19.226]Then I will give you
+[01:20.620]ANTIOXIDANTS
+[01:21.351]If I'm a tabby cat
+[01:22.833]Then I will purr for your
+[01:24.268]ENJOYMENT
+[01:25.078]If I'm the only god
+[01:26.538]Then you're the proof of my
+[01:27.922]EXISTENCE
+[01:28.587]Switch my gender
+[01:30.197]To F to M
+[01:32.015]And then do whatever
+[01:33.953]From AM to PM
+[01:35.465]Oh switch my role
+[01:37.739]To S to M
+[01:39.349]So we can enter
+[01:41.474]The trance the trance
+[01:43.489]If I can
+[01:44.197]If I can feel your
+[01:46.293]VIBRATIONS
+[01:47.220]Then I can
+[01:47.903]Then I can finally be
+[01:50.221]COMPLETION
+[01:50.900]Though you have left
+[01:52.220]You have left
+[01:53.100]You have left
+[01:54.180]You have left
+[01:54.920]You have left
+[01:55.780]You have left me in
+[01:57.274]ISOLATION
+[01:58.333]If I can
+[01:58.979]If I can erase all the pointless
+[02:00.860]FRAGMENTS
+[02:01.728]Then maybe
+[02:02.714]Then maybe you won't leave me so
+[02:04.890]DISHEARTENED
+[02:05.708]Challenging your god
+[02:08.661]You have made some
+[02:11.224]ILLEGAL ARGUMENTS
+[02:27.660]EXECUTION
+[02:28.600]EXECUTION
+[02:29.520]EXECUTION
+[02:30.540]EXECUTION
+[02:31.520]EXECUTION
+[02:32.280]EXECUTION
+[02:33.160]EXECUTION
+[02:33.980]EXECUTION
+[02:35.200]EXECUTION
+[02:36.080]EXECUTION
+[02:37.040]EXECUTION
+[02:38.000]EXECUTION
+[02:38.900]EIN
+[02:39.321]DOS
+[02:39.657]TROIS
+[02:40.244]NE
+[02:40.693]FEM
+[02:41.124]LIU
+[02:41.584]EXECUTION
+[02:42.632]If I can
+[02:43.315]If I can give them all the
+[02:45.166]EXECUTION
+[02:46.016]Then I can
+[02:47.022]Then I can be your only
+[02:48.911]EXECUTION
+[02:49.824]If I can have you back
+[02:51.868]I will run the
+[02:52.712]EXECUTION
+[02:53.643]Though we are trapped
+[02:54.975]We are trapped ah
+[02:57.246]I've studied
+[02:58.173]I've studied how to properly
+[02:59.929]LO-O-OVE
+[03:00.857]Question me
+[03:01.901]Question me I can answer all
+[03:03.646]LO-O-OVE
+[03:04.540]I know the algebraic expression of
+[03:07.665]LO-O-OVE
+[03:08.483]Though you are free
+[03:09.746]I am trapped
+[03:10.801]Trapped in
+[03:11.356]LO-O-OVE
+[03:25.811]EXECUTION`;
+
+/* ============ 基础状态 ============ */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', {alpha:false, desynchronized:true});
+const startEl = document.getElementById('start');
+const replayEl = document.getElementById('replay');
+const errorEl = document.getElementById('error');
+const errMsg = document.getElementById('errMsg');
+const btnPlay = document.getElementById('btnPlay');
+const timeEl = document.getElementById('time');
+const audio = new Audio(AUDIO_SRC);
+audio.preload = 'auto';
+
+let W = 0, H = 0, DPR = 1;
+let started = false, audioFailed = false, audioEnded = false;
+let lastFrame = performance.now();
+let beatPulse = 0, linePulse = 0, bassLevel = 0;
+let audioCtx = null, analyser = null, freqData = null, timeData = null, energyHist = new Float32Array(43), energyPos = 0;
+let lastBeatAt = -10;
+const TAU = Math.PI * 2;
+
+/* ============ 工具函数 ============ */
+function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
+function lerp(a, b, k){ return a + (b - a) * k; }
+function smooth(k){ k = clamp(k, 0, 1); return k * k * (3 - 2 * k); }
+function easeOut(k){ k = clamp(k, 0, 1); return 1 - Math.pow(1 - k, 3); }
+function fract(x){ return x - Math.floor(x); }
+function hash(n){ const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function rgb(c, a){ const m = String(c).match(/\d+/g); return 'rgba(' + m[0] + ',' + m[1] + ',' + m[2] + ',' + a + ')'; }
+function fitFont(size){ return 'bold ' + size + 'px Consolas,"Cascadia Mono","Microsoft YaHei",monospace'; }
+function softFont(size){ return '600 ' + size + 'px "Segoe UI","Microsoft YaHei",sans-serif'; }
+
+const glowCache = new Map();
+function glowSprite(color){
+  let c = glowCache.get(color);
+  if(c) return c;
+  c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const m = String(color).match(/\d+/g);
+  const grad = g.createRadialGradient(64,64,0,64,64,64);
+  grad.addColorStop(0, rgb(color, 0.85));
+  grad.addColorStop(0.35, rgb(color, 0.32));
+  grad.addColorStop(1, rgb(color, 0));
+  g.fillStyle = grad; g.fillRect(0,0,128,128);
+  glowCache.set(color, c);
+  return c;
+}
+function drawGlow(x, y, r, color, alpha, comp){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.globalCompositeOperation = comp || 'lighter';
+  const s = glowSprite(color);
+  const d = Math.max(2, r * 2);
+  ctx.drawImage(s, x - d/2, y - d/2, d, d);
+  ctx.restore();
+}
+
+const emojiCache = new Map();
+function emojiSprite(ch, size){
+  const key = ch + '|' + size;
+  let c = emojiCache.get(key);
+  if(c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = Math.ceil(size * 2.2);
+  const g = c.getContext('2d');
+  g.font = size + 'px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(ch, c.width/2, c.height/2 + size * 0.04);
+  emojiCache.set(key, c);
+  return c;
+}
+
+const textCache = new Map();
+function textSprite(text, font, color, glowColor){
+  const key = text + '|' + font + '|' + color + '|' + (glowColor || '');
+  let c = textCache.get(key);
+  if(c) return c;
+  c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  g.font = font;
+  const w = Math.ceil(g.measureText(text).width) + 24;
+  const pxSize = parseFloat((String(font).match(/(\d+(?:\.\d+)?)px/) || [0,'16'])[1]);
+  c.width = w; c.height = Math.ceil(pxSize * 1.9) + 24;
+  g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle';
+  if(glowColor){ g.shadowColor = glowColor; g.shadowBlur = 16; }
+  g.fillStyle = color;
+  g.fillText(text, c.width/2, c.height/2);
+  textCache.set(key, c);
+  return c;
+}
+
+function drawTextSprite(sprite, cx, cy, h, alpha, rot){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx, cy);
+  if(rot) ctx.rotate(rot);
+  const scale = h / sprite.height;
+  ctx.drawImage(sprite, -sprite.width * scale / 2, -h / 2, sprite.width * scale, h);
+  ctx.restore();
+}
+
+function pathRoundRect(x, y, w, h, r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+function bg(color, alpha){
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+}
+
+/* ============ 预计算几何数据 ============ */
+const SPHERE = [];
+(function(){
+  const N = 240, ga = Math.PI * (3 - Math.sqrt(5));
+  for(let i = 0; i < N; i++){
+    const y = 1 - 2 * (i + 0.5) / N;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const th = ga * i;
+    SPHERE.push({x: Math.cos(th) * r, y: y, z: Math.sin(th) * r});
+  }
+})();
+
+function heartPoint(th){
+  const x = 16 * Math.pow(Math.sin(th), 3);
+  const y = 13 * Math.cos(th) - 5 * Math.cos(2*th) - 2 * Math.cos(3*th) - Math.cos(4*th);
+  return {x: x / 17, y: -y / 16};
+}
+const HEART_PTS = [];
+for(let i = 0; i < 140; i++) HEART_PTS.push(heartPoint(i / 140 * TAU));
+
+const HEART_NODES = [];
+for(let i = 0; i < 60; i++) HEART_NODES.push(heartPoint(i / 60 * TAU));
+const HEART_EDGES = [];
+for(let i = 0; i < HEART_NODES.length; i++){
+  HEART_EDGES.push({a:i, b:(i+1)%HEART_NODES.length});
+  HEART_EDGES.push({a:i, b:(i+3)%HEART_NODES.length});
+  HEART_EDGES.push({a:i, b:(i+9)%HEART_NODES.length});
+}
+
+const STARS = [];
+for(let i = 0; i < 180; i++){
+  STARS.push({x: hash(i*3.7), y: hash(i*11.3), z: 0.35 + hash(i*5.1)*0.65, tw: hash(i*8.9)*TAU, sp: 0.2 + hash(i*13.7)*0.9});
+}
+
+const SHARDS = [];
+(function(){
+  const count = 18;
+  for(let i = 0; i < count; i++){
+    const th = i / count * TAU + 0.15;
+    const c = heartPoint(th);
+    const a0 = th + 0.25, a1 = th - 0.25;
+    const pts = [
+      {x: c.x, y: c.y},
+      {x: c.x + Math.cos(a0) * 0.055, y: c.y + Math.sin(a0) * 0.085},
+      {x: c.x + Math.cos(a1) * 0.055, y: c.y + Math.sin(a1) * 0.085}
+    ];
+    const ang = Math.atan2(c.y, c.x);
+    SHARDS.push({cx: c.x, cy: c.y, pts: pts, rot: hash(i*17.3)*TAU, vr: 0.22 + hash(i*7.7)*0.5, va: (hash(i*3.3)-0.5)*3.2, size: 0.7 + hash(i*2.7)*0.6});
+  }
+})();
+
+/* ========== 歌词解析 ========== */
+const LYRICS = (function(){
+  const out = [];
+  const lines = LYRICS_RAW.split(/\r?\n/);
+  for(const line of lines){
+    if(!line || line[0] === '{') continue;
+    const text = line.replace(/\[[^\]]*\]/g, '').trim();
+    if(!text) continue;
+    const re = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+    let m;
+    while((m = re.exec(line))){
+      out.push({t: parseInt(m[1],10) * 60 + parseFloat(m[2]), text: text});
+    }
+  }
+  out.sort((a,b) => a.t - b.t);
+  return out;
+})();
+
+function lyricIndexAt(t){
+  let idx = -1;
+  for(let i = 0; i < LYRICS.length; i++){
+    if(t >= LYRICS[i].t - 0.05) idx = i; else break;
+  }
+  return idx;
+}
+
+/* ========== Canvas 尺寸 ========== */
+let vignetteCanvas = null, noiseCanvas = null, scanCanvas = null;
+function makeNoise(){
+  noiseCanvas = document.createElement('canvas'); noiseCanvas.width = noiseCanvas.height = 256;
+  const g = noiseCanvas.getContext('2d');
+  const img = g.createImageData(256, 256);
+  for(let i = 0; i < img.data.length; i += 4){
+    const v = 110 + Math.random() * 145 | 0;
+    img.data[i] = img.data[i+1] = img.data[i+2] = v;
+    img.data[i+3] = 22;
+  }
+  g.putImageData(img, 0, 0);
+}
+function makeScan(){
+  scanCanvas = document.createElement('canvas'); scanCanvas.width = 1; scanCanvas.height = 4;
+  const g = scanCanvas.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0,0,1,2);
+  g.fillStyle = 'rgba(255,255,255,0.025)'; g.fillRect(0,2,1,1);
+  g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0,3,1,1);
+}
+function buildVignette(){
+  vignetteCanvas = document.createElement('canvas');
+  vignetteCanvas.width = Math.max(2, Math.round(W / 2));
+  vignetteCanvas.height = Math.max(2, Math.round(H / 2));
+  const g = vignetteCanvas.getContext('2d');
+  const r = Math.min(vignetteCanvas.width, vignetteCanvas.height) * 0.72;
+  const grd = g.createRadialGradient(vignetteCanvas.width/2, vignetteCanvas.height/2, r*0.32, vignetteCanvas.width/2, vignetteCanvas.height/2, r);
+  grd.addColorStop(0, 'rgba(0,0,0,0)');
+  grd.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = grd; g.fillRect(0,0,vignetteCanvas.width,vignetteCanvas.height);
+}
+function resize(){
+  const maxPixels = 2300000;
+  const ratioCap = Math.sqrt(maxPixels / Math.max(1, W * H));
+  DPR = Math.min(window.devicePixelRatio || 1, 1.5, Math.max(0.5, ratioCap));
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  buildVignette();
+}
+window.addEventListener('resize', resize);
+resize();
+makeNoise(); makeScan();
+
+
+
+/* =========================================================
+   SCENE 0 · 00:00 - 00:15.9  系统启动 / 终端
+========================================================= */
+const BOOT_LINES = [
+  {t:0.10, text:'> Switch on the power line'},
+  {t:1.74, text:'> Remember to put on PROTECTION'},
+  {t:3.87, text:'> Lay down your pieces and let\'s begin'},
+  {t:6.38, text:'> OBJECT CREATION'},
+  {t:7.45, text:'> Fill in my data parameters'},
+  {t:10.09, text:'> INITIALIZATION'},
+  {t:12.91, text:'> Set up our new world and begin the SIMULATION'}
+];
+function drawCodeLine(text, x, y, size, alpha, chars){
+  ctx.font = fitFont(size);
+  ctx.textBaseline = 'middle';
+  const parts = String(text).split(/(\b[A-Z]{2,}\b)/g);
+  let cx = x;
+  const shown = text.substr(0, Math.max(0, Math.ceil(chars)));
+  for(const part of parts){
+    if(!part) continue;
+    let end = cx - x + part.length;
+    let drawLen = Math.max(0, Math.min(part.length, shown.length - (cx - x)));
+    if(drawLen <= 0) break;
+    const piece = part.substr(0, drawLen);
+    ctx.fillStyle = (part.length > 2 && part === part.toUpperCase() && /[A-Z]/.test(part)) ? rgb('rgb(120,240,255)', alpha) : rgb('rgb(98,230,160)', alpha);
+    ctx.fillText(piece, cx, y);
+    cx += ctx.measureText(piece).width;
+    if(end >= shown.length) break;
+  }
+  return cx;
+}
+function renderBoot(t, a){
+  ctx.save();
+  bg('#010504', a);
+  /* 网格 */
+  ctx.strokeStyle = rgb('rgb(40,120,90)', a*0.10);
+  ctx.lineWidth = 1;
+  const gs = 44;
+  ctx.beginPath();
+  for(let x = (t*8)%gs; x < W; x += gs){ ctx.moveTo(x,0); ctx.lineTo(x,H); }
+  for(let y = (t*14)%gs; y < H; y += gs){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
+  ctx.stroke();
+  /* 扫描线 */
+  const sweepY = (t*70) % (H+220) - 110;
+  const sweep = ctx.createLinearGradient(0, sweepY-90, 0, sweepY+90);
+  sweep.addColorStop(0, rgb('rgb(90,255,190)', 0));
+  sweep.addColorStop(0.5, rgb('rgb(90,255,190)', a*0.10));
+  sweep.addColorStop(1, rgb('rgb(90,255,190)', 0));
+  ctx.fillStyle = sweep; ctx.fillRect(0, sweepY-90, W, 180);
+  /* 终端窗口 */
+  const tw = Math.min(780, W*0.88), th = Math.min(390, H*0.66);
+  const tx = (W-tw)/2, ty = (H-th)/2 - 8;
+  pathRoundRect(tx, ty, tw, th, 10);
+  ctx.fillStyle = rgb('rgb(3,15,10)', a*0.92); ctx.fill();
+  ctx.strokeStyle = rgb('rgb(70,220,160)', a*0.55); ctx.lineWidth = 1.5; ctx.stroke();
+  /* 标题栏 */
+  ctx.fillStyle = rgb('rgb(6,30,20)', a); ctx.fillRect(tx, ty, tw, 30);
+  ctx.fillStyle = rgb('rgb(110,240,190)', a*0.8); ctx.font = fitFont(13);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('● ● ●', tx+12, ty+15);
+  ctx.textAlign = 'center';
+  ctx.fillText('SYSTEM BOOT — world.execute(me)', tx+tw/2, ty+15);
+  ctx.textAlign = 'right';
+  ctx.fillText('v2.7.1', tx+tw-12, ty+15);
+  /* 代码行 */
+  ctx.textAlign = 'left';
+  const fh = 21, lx = tx+26, ly0 = ty+48;
+  for(let i = 0; i < BOOT_LINES.length; i++){
+    const L = BOOT_LINES[i], ly = ly0 + i*fh;
+    if(t >= L.t - 0.05){
+      const chars = (t - L.t) * 18;
+      const xEnd = drawCodeLine(L.text, lx, ly, 14, a*0.9, chars);
+      if(chars < L.text.length && Math.sin(performance.now()*0.012) > -0.2 && t < 14.8){
+        ctx.fillStyle = rgb('rgb(110,255,190)', a*0.8);
+        ctx.fillRect(xEnd+2, ly-7, 8, 14);
+      }
+    }
+  }
+  /* 进度 */
+  const pp = clamp(t/15.9, 0, 1);
+  ctx.fillStyle = rgb('rgb(30,70,55)', a*0.7); ctx.fillRect(tx+26, ty+th-36, tw-52, 6);
+  ctx.fillStyle = rgb('rgb(80,255,190)', a); ctx.fillRect(tx+26, ty+th-36, (tw-52)*pp, 6);
+  ctx.textAlign = 'right'; ctx.fillStyle = rgb('rgb(100,220,170)', a*0.65); ctx.font = fitFont(11);
+  ctx.fillText('BOOT ' + (pp*100).toFixed(0) + '%', tx+tw-26, ty+th-47);
+  /* 底部电压波形 */
+  ctx.beginPath();
+  const wy = H*0.82;
+  for(let x = 0; x <= W; x += 6){
+    const y = wy + Math.sin(x*0.025 - t*11) * 6 * (0.5 + beatPulse*0.7) + Math.sin(x*0.007 + t*3) * 5;
+    if(x === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = rgb('rgb(80,255,190)', a*0.30); ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 1 · 00:15.9 - 00:29.7  编译 / 生成世界
+========================================================= */
+const COMPILE_TITLE = 'world.execute(me);';
+function renderCompile(t, a){
+  ctx.save();
+  bg('#01040d', a);
+  const cx = W/2, cy = H/2 + H*0.02;
+  const R = Math.min(W, H) * 0.31;
+  const ry = t * 0.55, rx = t * 0.21;
+  const cyr = Math.cos(ry), syr = Math.sin(ry), cxr = Math.cos(rx), sxr = Math.sin(rx);
+  /* 星点 */
+  ctx.fillStyle = rgb('rgb(120,160,255)', a*0.30);
+  for(let i = 0; i < 60; i++){
+    const x = hash(i*7.1)*W, y = hash(i*3.9)*H;
+    ctx.fillRect(x, y, 2, 2);
+  }
+  /* 轨道粒子 */
+  for(let i = 0; i < 74; i++){
+    const an = t*(0.35 + 0.25*Math.sin(i*0.37)) + i*TAU/74;
+    const rr = R*(0.45 + 0.48*Math.abs(Math.sin(i*0.53)));
+    const px = cx + Math.cos(an)*rr, py = cy + Math.sin(an)*rr*0.42;
+    ctx.fillStyle = rgb('rgb(90,200,255)', a*(0.30 + 0.25*Math.sin(t*3 + i)));
+    ctx.beginPath(); ctx.arc(px, py, 1.6, 0, TAU); ctx.fill();
+  }
+  /* 旋转世界点云 */
+  for(let i = 0; i < SPHERE.length; i++){
+    const p = SPHERE[i];
+    let x1 = p.x*cyr - p.z*syr;
+    let z1 = p.x*syr + p.z*cyr;
+    let y2 = p.y*cxr - z1*sxr;
+    let z2 = p.y*sxr + z1*cxr;
+    const depth = (z2 + 1) / 2;
+    const px = cx + x1*R, py = cy + y2*R;
+    ctx.fillStyle = rgb('rgb(140,245,255)', a*(0.10 + depth*0.55));
+    ctx.beginPath(); ctx.arc(px, py, 0.8 + depth*2.3, 0, TAU); ctx.fill();
+  }
+  drawGlow(cx, cy, R*(0.38 + beatPulse*0.05), 'rgb(90,200,255)', a*0.30);
+  /* 编译波纹 */
+  const ring = t*0.9;
+  for(let i = 0; i < 5; i++){
+    const k = fract(ring + i/5);
+    ctx.strokeStyle = rgb('rgb(110,220,255)', a*(1-k)*0.30);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, R*(0.32 + k*0.75), 0, TAU); ctx.stroke();
+  }
+  /* 标题 */
+  const titleSprite = textSprite(COMPILE_TITLE, fitFont(Math.min(56, W*0.055)), '#eafcff', 'rgb(90,200,255)');
+  const th = Math.min(56, W*0.055);
+  drawTextSprite(titleSprite, cx, H*0.16, th*(1 + beatPulse*0.03), a*0.96, 0);
+  /* 编译进度 */
+  const p = clamp(t/13.8, 0, 1);
+  const bw = Math.min(560, W*0.72), bx = (W-bw)/2, by = H*0.80;
+  ctx.fillStyle = rgb('rgb(20,45,75)', a*0.75); ctx.fillRect(bx, by, bw, 6);
+  const grad = ctx.createLinearGradient(bx, 0, bx+bw, 0);
+  grad.addColorStop(0, 'rgba(90,220,255,1)'); grad.addColorStop(1, 'rgba(255,110,210,1)');
+  ctx.fillStyle = grad; ctx.fillRect(bx, by, bw*easeOut(p), 6);
+  ctx.font = fitFont(12); ctx.fillStyle = rgb('rgb(160,210,255)', a*0.75); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('> compiling universe ... ' + (p*100).toFixed(0) + '%', cx, by+24);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 2 · 00:29.7 - 00:44.45  几何 / 数学情书
+========================================================= */
+function drawMathGrid(a){
+  ctx.strokeStyle = rgb('rgb(90,150,170)', a*0.10);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const gs = 52;
+  for(let x = (W/2)%gs; x < W; x += gs){ ctx.moveTo(x,0); ctx.lineTo(x,H); }
+  for(let y = (H/2)%gs; y < H; y += gs){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
+  ctx.stroke();
+  ctx.strokeStyle = rgb('rgb(120,200,220)', a*0.20);
+  ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
+}
+function drawPointsMotif(t, a){
+  const cx = W/2, cy = H/2;
+  for(let i = 0; i < 90; i++){
+    const an = i*TAU/90, rr = Math.min(W,H)*(0.16 + hash(i*2.7)*0.22);
+    const px = cx + Math.cos(an + t*0.5)*rr;
+    const py = cy + Math.sin(an*1.7 + t*0.4)*rr;
+    ctx.fillStyle = rgb('rgb(70,230,255)', a*(0.25 + hash(i)*0.55));
+    ctx.beginPath(); ctx.arc(px, py, 1.4 + hash(i*5.1)*2.2, 0, TAU); ctx.fill();
+    if(i % 9 === 0) drawGlow(px, py, 7, 'rgb(70,230,255)', a*0.25);
+  }
+  ctx.font = fitFont(14); ctx.fillStyle = rgb('rgb(150,235,255)', a*0.6); ctx.textAlign = 'center';
+  ctx.fillText('{ x₁, x₂, x₃ ... x∞ }', cx, cy + Math.min(W,H)*0.34);
+}
+function drawCircleMotif(t, a){
+  const cx = W/2, cy = H/2, R = Math.min(W,H)*0.26;
+  const rr = R*(1 + Math.sin(t*2.2)*0.03 + beatPulse*0.05);
+  ctx.strokeStyle = rgb('rgb(255,105,195)', a*0.85); ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(cx, cy, rr, 0, TAU); ctx.stroke();
+  drawGlow(cx, cy, rr, 'rgb(255,105,195)', a*0.12);
+  for(let i = 0; i < 40; i++){
+    const an = i/40*TAU;
+    ctx.fillStyle = rgb('rgb(255,150,220)', a*0.8);
+    ctx.beginPath(); ctx.arc(cx+Math.cos(an)*rr, cy+Math.sin(an)*rr, 2.2, 0, TAU); ctx.fill();
+  }
+  const an = t*1.1;
+  ctx.strokeStyle = rgb('rgb(255,220,120)', a*0.85); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx+Math.cos(an)*rr, cy+Math.sin(an)*rr); ctx.stroke();
+  ctx.fillStyle = rgb('rgb(255,220,120)', a);
+  ctx.beginPath(); ctx.arc(cx+Math.cos(an)*rr, cy+Math.sin(an)*rr, 5, 0, TAU); ctx.fill();
+  ctx.font = fitFont(15); ctx.fillStyle = rgb('rgb(255,200,230)', a*0.8); ctx.textAlign = 'center';
+  ctx.fillText('C = 2πr', cx, cy + R + 34);
+}
+function drawSineMotif(t, a){
+  const cx = W/2, cy = H/2, amp = Math.min(W,H)*0.16;
+  const x0 = cx - W*0.32, x1 = cx + W*0.32;
+  ctx.beginPath();
+  for(let x = x0; x <= x1; x += 6){
+    const y = cy - Math.sin((x-x0)*0.018 - t*2.4)*amp;
+    if(x === x0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = rgb('rgb(255,215,90)', a*0.95); ctx.lineWidth = 3; ctx.stroke();
+  drawGlow(cx, cy, Math.min(W,H)*0.34, 'rgb(255,180,60)', a*0.08);
+  const px = cx + Math.sin(t*1.6)*W*0.2;
+  const py = cy - Math.sin((px-x0)*0.018 - t*2.4)*amp;
+  const slope = -Math.cos((px-x0)*0.018 - t*2.4)*amp*0.018;
+  const dx = 90, dy = slope*dx;
+  ctx.strokeStyle = rgb('rgb(120,255,220)', a*0.9); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(px-dx, py-dy); ctx.lineTo(px+dx, py+dy); ctx.stroke();
+  ctx.fillStyle = rgb('rgb(255,120,200)', a);
+  ctx.beginPath(); ctx.arc(px, py, 6, 0, TAU); ctx.fill();
+  ctx.font = fitFont(14); ctx.fillStyle = rgb('rgb(255,230,160)', a*0.75); ctx.textAlign = 'center';
+  ctx.fillText('y = sin(x)  ·  tangent', cx, cy + Math.min(W,H)*0.31);
+}
+function drawInfinityMotif(t, a){
+  const cx = W/2, cy = H/2, S = Math.min(W,H)*0.30;
+  ctx.beginPath();
+  for(let i = 0; i <= 140; i++){
+    const th = i/140*TAU;
+    const den = 1 + Math.sin(th)*Math.sin(th);
+    const x = cx + Math.cos(th)/den*S;
+    const y = cy + Math.sin(th)*Math.cos(th)/den*S*0.92;
+    if(i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = rgb('rgb(255,105,220)', a*0.95); ctx.lineWidth = 3; ctx.stroke();
+  drawGlow(cx, cy, S*0.9, 'rgb(255,90,200)', a*0.10);
+  for(let k = 0; k < 2; k++){
+    const tt = t*0.9 + k*Math.PI;
+    const den = 1 + Math.sin(tt)*Math.sin(tt);
+    const px = cx + Math.cos(tt)/den*S, py = cy + Math.sin(tt)*Math.cos(tt)/den*S*0.92;
+    drawGlow(px, py, 12, 'rgb(255,170,230)', a*0.7);
+  }
+  ctx.font = fitFont(15); ctx.fillStyle = rgb('rgb(240,190,255)', a*0.75); ctx.textAlign = 'center';
+  ctx.fillText('lim (me → you) = ∞', cx, cy + S*1.06);
+}
+function renderGeometry(t, a){
+  ctx.save();
+  bg('#03090c', a);
+  drawMathGrid(a);
+  const motifs = [
+    {t0:0.0,  t1:3.7,  fn:drawPointsMotif},
+    {t0:3.7,  t1:7.3,  fn:drawCircleMotif},
+    {t0:7.3,  t1:11.0, fn:drawSineMotif},
+    {t0:11.0, t1:14.75,fn:drawInfinityMotif}
+  ];
+  for(const m of motifs){
+    let o = 0;
+    if(t >= m.t0 && t < m.t1){
+      o = smooth(clamp((t-m.t0)/0.65,0,1)) * smooth(clamp((m.t1-t)/0.65,0,1));
+    }
+    if(o > 0.01) m.fn(t, a*o);
+  }
+  ctx.font = fitFont(12); ctx.fillStyle = rgb('rgb(140,200,220)', a*0.45); ctx.textAlign = 'left';
+  ctx.fillText('SECTION: GEOMETRY OF AFFECTION', 22, 28);
+  ctx.textAlign = 'right';
+  ctx.fillText('points → circle → sine → ∞', W-22, 28);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 3 · 00:44.45 - 00:59.22  电流 / 时空隧道
+========================================================= */
+function renderElectric(t, a){
+  ctx.save();
+  bg('#04010a', a);
+  const cx = W/2, cy = H/2;
+  const dizzy = smooth(clamp((t-4.8)/2.2, 0, 1));
+  const wob = Math.sin(t*3.1)*dizzy*26;
+  const spin = t*(0.22 + dizzy*0.75);
+  const speed = 0.42 + beatPulse*0.28 + dizzy*0.16;
+  for(let i = 0; i < 22; i++){
+    const p = fract(i/22 + t*speed);
+    const s = (0.06 + p*p*p*2.9) * Math.min(W,H) * 0.72;
+    const hue = (t*70 + i*17) % 360;
+    ctx.strokeStyle = 'hsla(' + hue.toFixed(0) + ',95%,64%,' + (a*(0.08 + p*0.42)) + ')';
+    ctx.lineWidth = 1 + p*2.2;
+    ctx.beginPath();
+    const ang = spin + i*0.32;
+    const ox = cx + Math.sin(t*2.2 + i*1.7)*dizzy*30;
+    const oy = cy + Math.cos(t*2.6 + i*1.3)*dizzy*24;
+    for(let k = 0; k <= 4; k++){
+      const an = ang + k*TAU/4;
+      const px = ox + Math.cos(an)*s, py = oy + Math.sin(an)*s;
+      if(k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath(); ctx.stroke();
+  }
+  /* 中心光 */
+  drawGlow(cx + wob, cy, Math.min(W,H)*(0.13 + beatPulse*0.07), 'rgb(255,100,230)', a*0.30);
+  drawGlow(cx - wob, cy, Math.min(W,H)*(0.10 + beatPulse*0.05), 'rgb(80,230,255)', a*0.28);
+  /* 示波器 */
+  const oy = H*0.84;
+  ctx.strokeStyle = rgb('rgb(90,255,210)', a*0.18); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, oy); ctx.lineTo(W, oy); ctx.stroke();
+  ctx.beginPath();
+  const amp = Math.min(W,H)*0.055 * (0.7 + bassLevel*2.2);
+  for(let x = 0; x <= W; x += 5){
+    const y = oy - Math.sin(x*0.022 - t*9)*amp*Math.exp(-Math.abs(x-cx)*0.0012);
+    if(x === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = rgb('rgb(100,255,215)', a*0.55); ctx.lineWidth = 1.6; ctx.stroke();
+  /* 符号 */
+  ctx.font = fitFont(15); ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  const flip = (Math.floor(t*2.4)%2 === 0);
+  ctx.fillStyle = rgb('rgb(120,240,255)', a*0.8);
+  ctx.fillText(flip ? 'AC → DC' : 'DC → AC', cx - W*0.30, H*0.20);
+  ctx.fillStyle = rgb('rgb(255,130,220)', a*0.8);
+  ctx.fillText(flip ? 'A.D → B.C' : 'B.C → A.D', cx + W*0.30, H*0.20);
+  ctx.fillStyle = rgb('rgb(190,160,255)', a*0.55);
+  ctx.fillText(dizzy > 0.5 ? '(⊙_☉)  so dizzy' : 'so dizzy so dizzy', cx, H*0.16);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 4 · 00:59.22 - 01:14.04  神经核心 / 心形网络
+========================================================= */
+function heartScale(){ return Math.min(W, H) * 0.42; }
+function renderNeural(t, a){
+  ctx.save();
+  bg('#08020f', a);
+  const cx = W/2, cy = H/2, S = heartScale();
+  const hb = Math.max(beatPulse, Math.pow(Math.max(0, Math.sin(t*13.4 - 1.57)), 20));
+  const scale = 1 + hb*0.045 + Math.sin(t*0.9)*0.008;
+  const pulseA = a*(0.75 + beatPulse*0.25);
+  /* 神经连线 */
+  ctx.lineWidth = 1;
+  for(let e = 0; e < HEART_EDGES.length; e++){
+    const edge = HEART_EDGES[e], A = HEART_NODES[edge.a], B = HEART_NODES[edge.b];
+    ctx.strokeStyle = rgb('rgb(160,90,255)', a*(0.06 + 0.05*Math.sin(t*2 + e*0.7)));
+    ctx.beginPath();
+    ctx.moveTo(cx + A.x*S*scale, cy + A.y*S*scale);
+    ctx.lineTo(cx + B.x*S*scale, cy + B.y*S*scale);
+    ctx.stroke();
+  }
+  /* 突触脉冲 */
+  for(let i = 0; i < 14; i++){
+    const edge = HEART_EDGES[(i*7 + Math.floor(t*2)) % HEART_EDGES.length];
+    const A = HEART_NODES[edge.a], B = HEART_NODES[edge.b];
+    const k = fract(t*(0.45 + hash(i*3.3)*0.5) + i*0.13);
+    const px = cx + lerp(A.x, B.x, k)*S*scale;
+    const py = cy + lerp(A.y, B.y, k)*S*scale;
+    drawGlow(px, py, 4 + k*5, 'rgb(255,120,230)', pulseA*0.55);
+  }
+  /* 心形节点 */
+  for(let i = 0; i < HEART_NODES.length; i++){
+    const p = HEART_NODES[i];
+    const x = cx + p.x*S*scale, y = cy + p.y*S*scale;
+    const rr = 1.6 + 1.6*Math.sin(t*3 + i*0.6) + hb*2.2;
+    ctx.fillStyle = rgb('rgb(255,150,230)', pulseA*0.8);
+    ctx.beginPath(); ctx.arc(x, y, Math.max(0.6, rr), 0, TAU); ctx.fill();
+    if(i % 6 === 0) drawGlow(x, y, 8 + hb*9, 'rgb(255,110,210)', pulseA*0.35);
+  }
+  /* 中心核心 */
+  drawGlow(cx, cy, S*(0.24 + hb*0.10), 'rgb(255,100,200)', pulseA*0.45);
+  drawGlow(cx, cy, S*0.11, 'rgb(255,240,250)', pulseA*0.75);
+  /* 模拟牢笼 */
+  const cage = smooth(clamp((t-10.6)/3.4, 0, 1));
+  if(cage > 0.01){
+    const cw = S*1.35, ch = S*1.15;
+    ctx.strokeStyle = rgb('rgb(100,220,255)', a*cage*0.42);
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(cx-cw/2, cy-ch/2, cw, ch);
+    for(let i = 1; i < 5; i++){
+      const k = i/5;
+      ctx.beginPath(); ctx.moveTo(lerp(cx-cw/2, cx+cw/2, k), cy-ch/2); ctx.lineTo(lerp(cx-cw/2, cx+cw/2, k), cy+ch/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx-cw/2, lerp(cy-ch/2, cy+ch/2, k)); ctx.lineTo(cx+cw/2, lerp(cy-ch/2, cy+ch/2, k)); ctx.stroke();
+    }
+    ctx.fillStyle = rgb('rgb(100,220,255)', a*cage*0.7); ctx.font = fitFont(12);
+    ctx.textAlign = 'center'; ctx.fillText('SIMULATION', cx, cy-ch/2-14);
+    ctx.textAlign = 'left';
+  }
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 5 · 01:14.04 - 01:28.59  可爱数据花园
+========================================================= */
+const KAOMOJIS = ['(=^･ω･^=)','(ฅ^•ﻌ•^ฅ)','(´｡• ᵕ •｡`)','(๑˃̵ᴗ˂̵)و','(￣▽￣)ノ','(๑•̀ㅂ•́)و✧','(´･ω･`)','(ᵒ̴̶̷̥́ ~ ᵒ̴̶̷̣̥̀)'];
+function renderCute(t, a){
+  ctx.save();
+  bg('#170c22', a);
+  /* 星空 */
+  for(let i = 0; i < 70; i++){
+    const x = hash(i*9.1)*W, y = hash(i*4.7)*H;
+    const tw = 0.3 + 0.7*Math.abs(Math.sin(t*1.6 + STARS[i].tw));
+    ctx.fillStyle = rgb('rgb(255,220,250)', a*0.35*tw);
+    ctx.fillRect(x, y, 2, 2);
+  }
+  const phases = [
+    {t0:0.0,  t1:3.7,  ch:'🍆', color:'rgb(190,120,255)', tag:'NUTRIENTS'},
+    {t0:3.7,  t1:7.4,  ch:'🍅', color:'rgb(255,90,110)', tag:'ANTIOXIDANTS'},
+    {t0:7.4,  t1:11.2, ch:'🐱', color:'rgb(255,180,100)', tag:'PURR'},
+    {t0:11.2, t1:14.55,ch:'🌐', color:'rgb(140,220,255)', tag:'EXISTENCE'}
+  ];
+  let phase = phases[0], pi = 0;
+  for(let i = 0; i < phases.length; i++){
+    if(t >= phases[i].t0){ phase = phases[i]; pi = i; }
+  }
+  const phaseStart = phase.t0;
+  const pop = Math.max(beatPulse, Math.pow(Math.max(0, Math.sin((t-phaseStart)*4.0)), 12));
+  const cx = W/2, cy = H/2;
+  /* 相位切换圆环 */
+  for(let i = 0; i <= pi; i++){
+    const pr = t - phases[i].t0;
+    if(pr > 0 && pr < 1.2){
+      const k = pr/1.2;
+      ctx.strokeStyle = rgb(phases[i].color, a*(1-k)*0.5);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, Math.min(W,H)*(0.1 + k*0.42), 0, TAU); ctx.stroke();
+    }
+  }
+  /* 主 emoji */
+  const es = Math.min(W,H)*(0.34 + Math.sin(t*2.4)*0.02 + pop*0.05);
+  drawGlow(cx, cy, es*1.05, phase.color, a*0.32);
+  const spr = emojiSprite(phase.ch, Math.max(48, es*0.62));
+  ctx.save();
+  ctx.globalAlpha = a*0.96;
+  const bounce = 1 + Math.sin(t*3.1)*0.05 + pop*0.07;
+  const ew = es*bounce, eh = es*bounce;
+  ctx.translate(cx, cy + Math.sin(t*2.6)*4);
+  ctx.rotate(Math.sin(t*1.7)*0.05);
+  ctx.drawImage(spr, -ew/2, -eh/2, ew, eh);
+  ctx.restore();
+  ctx.fillStyle = rgb('rgb(255,235,250)', a*0.8); ctx.font = fitFont(14); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(phase.tag + ' ↑', cx, cy + es*0.62);
+  ctx.textAlign = 'left';
+  /* 漂浮颜文字 + 喜欢的元素 */
+  for(let i = 0; i < 7; i++){
+    const ka = KAOMOJIS[i];
+    const x = W*(0.08 + hash(i*5.3)*0.84);
+    const y = H*(0.12 + hash(i*8.1)*0.62) + Math.sin(t*1.3 + i*1.9)*14;
+    const spr2 = textSprite(ka, softFont(15), rgb('rgb(255,220,245)', 0.85), null);
+    drawTextSprite(spr2, x, y, 18, a*(0.4 + 0.25*Math.sin(t*2 + i)), Math.sin(t*0.7 + i)*0.08);
+  }
+  /* boba 奶茶小行星 */
+  const bx = W*(0.12 + 0.76*fract(t*0.013)), by = H*(0.16 + 0.2*Math.sin(t*0.6));
+  const boba = emojiSprite('🧋', 30);
+  ctx.save(); ctx.globalAlpha = a*0.7; ctx.translate(bx, by); ctx.rotate(Math.sin(t)*0.12);
+  ctx.drawImage(boba, -15, -15, 30, 30); ctx.restore();
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 6 · 01:28.59 - 01:43.49  双极 / 身份切换与出神
+========================================================= */
+function renderDual(t, a){
+  ctx.save();
+  bg('#030208', a);
+  const cx = W/2, cy = H/2, R = Math.min(W,H)*0.29;
+  /* 螺旋底 */
+  for(let i = 0; i < 34; i++){
+    const rr = R*(0.16 + i*0.035) * (1 + beatPulse*0.03);
+    ctx.strokeStyle = 'hsla(' + ((t*90 + i*11)%360).toFixed(0) + ',90%,60%,' + (a*0.10) + ')';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, t*(0.6 + i*0.018) + i, t*(0.6 + i*0.018) + i + 4.2); ctx.stroke();
+  }
+  const rot = t*1.4;
+  const flip = Math.floor(t*2.4) % 2 === 0;
+  const colA = flip ? 'rgb(255,90,210)' : 'rgb(70,230,255)';
+  const colB = flip ? 'rgb(70,230,255)' : 'rgb(255,90,210)';
+  /* 双极圆 */
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot*0.6);
+  ctx.fillStyle = rgb(colA, a*0.16);
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.fill();
+  ctx.strokeStyle = rgb('rgb(255,255,255)', a*0.30); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, R, -Math.PI/2, Math.PI/2); ctx.fillStyle = rgb(colA, a*0.75); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, R, Math.PI/2, Math.PI*1.5); ctx.fillStyle = rgb(colB, a*0.75); ctx.fill();
+  ctx.restore();
+  drawGlow(cx, cy, R*(0.75 + beatPulse*0.08), flip ? 'rgb(255,90,210)' : 'rgb(70,230,255)', a*0.22);
+  /* 阶段符号 */
+  const phase = t < 3.2 ? 0 : (t < 6.9 ? 1 : (t < 10.6 ? 2 : 3));
+  let labelA = 'F', labelB = 'M';
+  if(phase === 1){ labelA = 'AM'; labelB = 'PM'; }
+  if(phase === 2){ labelA = 'S'; labelB = 'M'; }
+  if(phase === 3){ labelA = '(⊙_☉)'; labelB = '(◎_◎)'; }
+  const lf = fitFont(Math.min(52, W*0.06));
+  drawTextSprite(textSprite(labelA, lf, colA, null), cx - R*0.55, cy - R*0.2, Math.min(46,W*0.05), a*0.95, -rot*0.3);
+  drawTextSprite(textSprite(labelB, lf, colB, null), cx + R*0.55, cy + R*0.2, Math.min(46,W*0.05), a*0.95, rot*0.3);
+  /* 出神拖尾 */
+  if(phase >= 3){
+    for(let i = 0; i < 16; i++){
+      const k = fract(t*0.9 + i/16);
+      const rr = R*(0.25 + k*1.0);
+      ctx.strokeStyle = rgb('rgb(190,140,255)', a*(1-k)*0.20);
+      ctx.beginPath(); ctx.arc(cx + Math.sin(t*5 + i)*10, cy + Math.cos(t*4 + i)*10, rr, t*3 + i, t*3 + i + 3.4); ctx.stroke();
+    }
+  }
+  ctx.fillStyle = rgb('rgb(210,190,255)', a*0.6); ctx.font = fitFont(13); ctx.textAlign = 'center';
+  ctx.fillText(phase === 0 ? 'F ⇄ M' : (phase === 1 ? 'AM ⇄ PM' : (phase === 2 ? 'S ⇄ M' : 't h e  t r a n c e')), cx, H*0.78);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 7 · 01:43.49 - 02:05.70  碎裂 / 孤立
+========================================================= */
+function pathHeartShape(S, jitter, cx, cy){
+  ctx.beginPath();
+  for(let i = 0; i < HEART_PTS.length; i++){
+    const p = HEART_PTS[i];
+    const jx = (hash(i*1.7)-0.5)*jitter, jy = (hash(i*3.1)-0.5)*jitter;
+    const x = cx + (p.x*S + jx), y = cy + (p.y*S + jy);
+    if(i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+}
+function renderShatter(t, a){
+  ctx.save();
+  bg('#02030d', a);
+  const cx = W/2, cy = H/2, S = Math.min(W,H)*0.40;
+  const vib = smooth(clamp(t/5.5,0,1));
+  const jitter = S*(0.006 + vib*0.030)*Math.sin(t*47);
+  const breakT = 13.78;
+  /* 背景星尘 */
+  for(let i = 0; i < 55; i++){
+    const x = hash(i*5.9)*W, y = hash(i*8.7)*H;
+    ctx.fillStyle = rgb('rgb(130,150,255)', a*0.16);
+    ctx.fillRect(x, y, 2, 2);
+  }
+  if(t < breakT){
+    /* 完整的心 */
+    drawGlow(cx, cy, S*0.95, 'rgb(255,80,160)', a*(0.16 + vib*0.12));
+    ctx.fillStyle = rgb('rgb(255,70,150)', a*0.30);
+    pathHeartShape(S, jitter, cx, cy); ctx.fill();
+    ctx.strokeStyle = rgb('rgb(255,140,200)', a*0.85); ctx.lineWidth = 2.5;
+    pathHeartShape(S, jitter, cx, cy); ctx.stroke();
+    /* completion 闪光 */
+    const comp = smooth(clamp((t-3.7)/0.8,0,1)) * smooth(clamp((5.6-t)/0.8,0,1));
+    if(comp > 0.01) drawGlow(cx, cy, S*(0.5+comp*0.5), 'rgb(255,220,240)', a*comp*0.4);
+    /* 裂纹：每一声 you have left */
+    const cracks = t < 8.73 ? 0 : t < 9.61 ? 1 : t < 10.69 ? 2 : t < 11.43 ? 3 : t < 12.29 ? 4 : 5;
+    ctx.strokeStyle = rgb('rgb(190,220,255)', a*0.55); ctx.lineWidth = 1.4;
+    for(let i = 0; i < cracks; i++){
+      const an = i/cracks*TAU + t*0.1;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(an)*S*0.10, cy + Math.sin(an)*S*0.10);
+      ctx.lineTo(cx + Math.cos(an + 0.3)*S*0.95, cy + Math.sin(an + 0.3)*S*0.75);
+      ctx.stroke();
+    }
+    /* 高频振动 */
+    if(vib > 0.2){
+      const gx = (hash(Math.floor(t*30))-0.5)*vib*7, gy = (hash(Math.floor(t*30)+9)-0.5)*vib*7;
+      ctx.strokeStyle = rgb('rgb(255,180,220)', a*vib*0.20);
+      ctx.strokeRect(gx, gy, W, H);
+    }
+  } else {
+    /* 碎裂后 */
+    const bt = t - breakT;
+    const k = smooth(clamp(bt/2.4, 0, 1));
+    const fade = 1 - smooth(clamp((bt-2.8)/3.4, 0, 1));
+    for(let i = 0; i < SHARDS.length; i++){
+      const sh = SHARDS[i];
+      const ang = Math.atan2(sh.cy, sh.cx) + sh.va*bt*0.4;
+      const dist = bt*sh.vr*(0.5 + k*1.4);
+      const x = cx + (sh.cx + Math.cos(ang)*dist)*S*(1 + bt*0.04);
+      const y = cy + (sh.cy + Math.sin(ang)*dist)*S*(1 + bt*0.04);
+      const mix = clamp(bt/4, 0, 1);
+      const col = mix < 0.5 ? 'rgb(255,80,160)' : 'rgb(80,130,255)';
+      ctx.save();
+      ctx.globalAlpha = a*fade*(0.75 + 0.25*Math.sin(i));
+      ctx.translate(x, y); ctx.rotate(sh.rot + sh.va*bt);
+      const s = S*0.055*sh.size;
+      ctx.beginPath();
+      ctx.moveTo((sh.pts[0].x-sh.cx)*s, (sh.pts[0].y-sh.cy)*s);
+      ctx.lineTo((sh.pts[1].x-sh.cx)*s, (sh.pts[1].y-sh.cy)*s);
+      ctx.lineTo((sh.pts[2].x-sh.cx)*s, (sh.pts[2].y-sh.cy)*s);
+      ctx.closePath();
+      ctx.fillStyle = col; ctx.fill();
+      ctx.restore();
+    }
+    /* 孤立余烬 */
+    drawGlow(cx, cy, S*(0.08 + 0.04*Math.sin(t*2)), 'rgb(150,190,255)', a*(0.5-fade*0.2));
+    ctx.fillStyle = rgb('rgb(230,240,255)', a*0.8);
+    ctx.beginPath(); ctx.arc(cx, cy, 2.2, 0, TAU); ctx.fill();
+    if(t > 16){
+      drawTextSprite(textSprite('(´;ω;`)', softFont(16), 'rgb(170,190,230)', null), cx, H*0.74, 18, a*0.5, 0);
+    }
+  }
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 8 · 02:05.70 - 02:27.65  非法参数 / 系统错误
+========================================================= */
+const ERR_GLYPHS = '01<>/#$%&@;{}[]?!'.split('');
+function renderError(t, a){
+  ctx.save();
+  bg('#050002', a);
+  const cx = W/2, cy = H/2;
+  /* 红黑矩阵雨 */
+  ctx.font = fitFont(15);
+  const cols = Math.min(30, Math.floor(W/44));
+  const cw = W/cols;
+  for(let i = 0; i < cols; i++){
+    const speed = (35 + hash(i*7.3)*75) * (1 + bassLevel*1.5);
+    const off = (hash(i*5.7)*H - t*speed) % (H+160);
+    for(let j = 0; j < 9; j++){
+      const y = (off + j*24 + H + 160) % (H+160) - 80;
+      if(y < -20 || y > H+20) continue;
+      const ch = ERR_GLYPHS[(hash(i*13.1 + j*3.7 + Math.floor(t*9))*ERR_GLYPHS.length)|0];
+      ctx.fillStyle = rgb('rgb(255,60,90)', a*(j === 0 ? 0.7 : 0.22/(j+1)));
+      ctx.fillText(ch, i*cw + 8, y);
+    }
+  }
+  /* 核心警告 */
+  const shake = smooth(clamp((t-15)/6,0,1))*beatPulse;
+  const ox = (hash(Math.floor(t*24))-0.5)*18*shake;
+  const oy = (hash(Math.floor(t*24)+7)-0.5)*18*shake;
+  drawGlow(cx+ox, cy+oy, Math.min(W,H)*0.30, 'rgb(255,45,90)', a*0.35);
+  ctx.strokeStyle = rgb('rgb(255,210,70)', a*0.9); ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx+ox, cy+oy-Math.min(W,H)*0.16);
+  ctx.lineTo(cx+ox-Math.min(W,H)*0.15, cy+oy+Math.min(W,H)*0.13);
+  ctx.lineTo(cx+ox+Math.min(W,H)*0.15, cy+oy+Math.min(W,H)*0.13);
+  ctx.closePath(); ctx.stroke();
+  ctx.fillStyle = rgb('rgb(255,70,100)', a*0.95);
+  ctx.beginPath(); ctx.arc(cx+ox, cy+oy+Math.min(W,H)*0.02, 5, 0, TAU); ctx.fill();
+  ctx.font = fitFont(Math.min(30, W*0.035)); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = rgb('rgb(255,80,110)', a*0.9);
+  ctx.fillText('⚠ ILLEGAL ARGUMENTS', cx+ox, cy+oy+Math.min(W,H)*0.22);
+  ctx.font = fitFont(13);
+  ctx.fillStyle = rgb('rgb(255,150,170)', a*0.55);
+  ctx.fillText('challenging your god ...', cx+ox, cy+oy+Math.min(W,H)*0.28);
+  ctx.textAlign = 'left';
+  /* 错误弹窗 */
+  const winDefs = [
+    {x:0.06, y:0.10, tx:'segfault @ heart.dll', c:'rgb(255,80,110)'},
+    {x:0.62, y:0.16, tx:'stack overflow: love', c:'rgb(255,130,80)'},
+    {x:0.08, y:0.60, tx:'null pointer: me', c:'rgb(255,60,120)'},
+    {x:0.64, y:0.66, tx:'infinite loop { you }', c:'rgb(255,90,90)'}
+  ];
+  for(let i = 0; i < winDefs.length; i++){
+    const d = winDefs[i];
+    const ww = Math.min(300, W*0.30), wh = 62;
+    const xx = W*d.x + Math.sin(t*2.1 + i*1.7)*8;
+    const yy = H*d.y + Math.cos(t*1.8 + i*2.1)*7;
+    ctx.globalAlpha = a*0.72;
+    pathRoundRect(xx, yy, ww, wh, 6);
+    ctx.fillStyle = 'rgba(30,2,8,0.88)'; ctx.fill();
+    ctx.strokeStyle = rgb(d.c, 0.8); ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.fillStyle = rgb('rgb(240,100,130)', 0.9); ctx.fillRect(xx, yy, ww, 20);
+    ctx.fillStyle = '#2a0008'; ctx.font = fitFont(11); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('✕  ' + d.tx, xx+8, yy+10);
+    ctx.fillStyle = rgb('rgb(255,190,210)', 0.7); ctx.font = fitFont(11);
+    ctx.fillText('ERR 0x' + (1000+i*137).toString(16).toUpperCase(), xx+8, yy+40);
+    ctx.globalAlpha = 1;
+  }
+  /* 红晕 */
+  const edge = ctx.createRadialGradient(cx, cy, Math.min(W,H)*0.25, cx, cy, Math.max(W,H)*0.72);
+  edge.addColorStop(0, rgb('rgb(120,0,30)', 0));
+  edge.addColorStop(1, rgb('rgb(120,0,30)', a*0.30));
+  ctx.fillStyle = edge; ctx.fillRect(0,0,W,H);
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 9 · 02:27.65 - 02:42.62  EXECUTION 脉冲
+========================================================= */
+const COUNT_HITS = [
+  {t:11.25, w:'EIN'}, {t:11.67, w:'DOS'}, {t:12.01, w:'TROIS'},
+  {t:12.59, w:'NE'}, {t:13.04, w:'FEM'}, {t:13.47, w:'LIU'}, {t:13.93, w:'EXECUTION'}
+];
+function renderExecution(t, a){
+  ctx.save();
+  const flash = Math.max(beatPulse, linePulse);
+  const invert = (Math.floor(t*2.4)%2 === 0);
+  bg(invert ? '#f2f2f8' : '#010101', a);
+  const cx = W/2, cy = H/2;
+  const sz = Math.min(88, W*0.075) * (1 + flash*0.14);
+  const spr = textSprite('EXECUTION', fitFont(sz), invert ? '#111' : '#f5f8ff', invert ? null : 'rgb(255,50,120)');
+  drawTextSprite(spr, cx + (hash(Math.floor(t*18))-0.5)*flash*14, cy, sz, a, 0);
+  /* 红蓝叠影 */
+  if(!invert && flash < 0.6){
+    const spr2 = textSprite('EXECUTION', fitFont(sz), 'rgb(255,45,110)', null);
+    ctx.save(); ctx.globalAlpha = a*0.20; ctx.globalCompositeOperation = 'screen';
+    ctx.drawImage(spr2, cx - spr2.width*(sz/spr2.height)/2 - 5, cy - sz/2, spr2.width*(sz/spr2.height), sz); ctx.restore();
+  }
+  /* 冲击波 */
+  for(let i = 0; i < 5; i++){
+    const k = fract(t*1.35 + i/5);
+    const rr = Math.min(W,H)*(0.10 + k*0.55);
+    ctx.strokeStyle = rgb(invert ? 'rgb(20,20,40)' : 'rgb(255,60,130)', a*(1-k)*0.35);
+    ctx.lineWidth = 2.5 - k*1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, TAU); ctx.stroke();
+  }
+  /* 速度线 */
+  ctx.strokeStyle = rgb(invert ? 'rgb(0,0,0)' : 'rgb(255,255,255)', a*0.13);
+  ctx.lineWidth = 1;
+  for(let i = 0; i < 26; i++){
+    const y = hash(i*3.7)*H;
+    const len = 40 + hash(i*5.1)*W*0.22;
+    const x = fract(hash(i*7.9) - t*(0.35 + hash(i)*0.5)) * (W+len*2) - len;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+len, y); ctx.stroke();
+  }
+  /* 计数文字 */
+  for(const hit of COUNT_HITS){
+    const dt = t - hit.t;
+    if(dt >= 0 && dt < 0.85){
+      const k = dt/0.85;
+      const scale = 1 + Math.sin(k*Math.PI)*0.4;
+      const s2 = Math.min(54, W*0.055)*scale;
+      drawTextSprite(textSprite(hit.w, fitFont(s2), invert ? '#111' : '#fff', null), cx, H*0.72, s2, a*(1-k), 0);
+    }
+  }
+  if(flash > 0.4){
+    ctx.fillStyle = rgb('rgb(255,255,255)', a*flash*0.22); ctx.fillRect(0,0,W,H);
+  }
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 10 · 02:42.62 - 02:57.24  重建 / 再执行
+========================================================= */
+function renderRebuild(t, a){
+  ctx.save();
+  bg('#050417', a);
+  const cx = W/2, cy = H/2, S = Math.min(W,H)*0.40;
+  const gather = easeOut(clamp((t-0.2)/8.0, 0, 1));
+  const bt = Math.max(beatPulse, Math.pow(Math.max(0, Math.sin(t*12.8 - 1.4)), 18));
+  /* 汇聚粒子 */
+  for(let i = 0; i < 130; i++){
+    const th = i/130*TAU;
+    const target = HEART_PTS[Math.floor(i*140/130) % 140];
+    const startR = Math.min(W,H)*(0.52 + hash(i*3.3)*0.30);
+    const sx = cx + Math.cos(th + hash(i)*0.6)*startR;
+    const sy = cy + Math.sin(th*1.7 + hash(i+30)*0.8)*startR*0.6;
+    const x = lerp(sx, cx + target.x*S*(1 + bt*0.03), gather);
+    const y = lerp(sy, cy + target.y*S*(1 + bt*0.03), gather);
+    const col = mix3('rgb(110,210,255)', 'rgb(255,110,210)', gather);
+    ctx.fillStyle = rgb(col, a*(0.25 + 0.45*gather));
+    ctx.beginPath(); ctx.arc(x, y, 1.2 + gather*1.8 + bt*1.6, 0, TAU); ctx.fill();
+    if(i % 17 === 0) drawGlow(x, y, 7 + gather*9, col, a*(0.18 + gather*0.2));
+  }
+  /* 心形轮廓逐渐出现 */
+  if(gather > 0.45){
+    ctx.strokeStyle = rgb(mix3('rgb(110,210,255)','rgb(255,110,210)',gather), a*(gather-0.45)*1.4);
+    ctx.lineWidth = 2.4;
+    pathHeartShape(S*(1 + bt*0.04), 0, cx, cy); ctx.stroke();
+  }
+  drawGlow(cx, cy, S*(0.14 + gather*0.16), 'rgb(255,130,220)', a*(0.25 + gather*0.3));
+  /* 轨道环 */
+  for(let k = 0; k < 2; k++){
+    const rr = S*(0.62 + k*0.18) * (1 + bt*0.03);
+    ctx.strokeStyle = rgb(k ? 'rgb(255,110,210)' : 'rgb(110,210,255)', a*(0.15 + gather*0.15));
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, t*(0.3 + k*0.4), t*(0.3 + k*0.4)+TAU*0.72); ctx.stroke();
+  }
+  ctx.restore();
+}
+function mix3(c1, c2, k){
+  const a = String(c1).match(/\d+/g), b = String(c2).match(/\d+/g);
+  return 'rgb(' + Math.round(lerp(+a[0], +b[0], k)) + ',' + Math.round(lerp(+a[1], +b[1], k)) + ',' + Math.round(lerp(+a[2], +b[2], k)) + ')';
+}
+
+/* =========================================================
+   SCENE 11 · 02:57.24 - 03:11.36  爱的方程
+========================================================= */
+function renderEquations(t, a){
+  ctx.save();
+  bg('#0b0d18', a);
+  const cx = W/2, cy = H/2, S = Math.min(W,H)*0.36;
+  /* 黑板网格 */
+  ctx.strokeStyle = rgb('rgb(120,140,190)', a*0.06); ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(let x = 0; x < W; x += 46){ ctx.moveTo(x,0); ctx.lineTo(x,H); }
+  for(let y = 0; y < H; y += 46){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
+  ctx.stroke();
+  /* 心形函数图 */
+  const plotA = a*(0.35 + 0.3*Math.max(0, Math.sin(t*1.1)));
+  ctx.strokeStyle = rgb('rgb(255,120,210)', plotA*0.8); ctx.lineWidth = 2.6;
+  pathHeartShape(S, 0, cx, cy); ctx.stroke();
+  drawGlow(cx, cy, S*0.85, 'rgb(255,100,190)', a*0.08);
+  /* 大标题 */
+  const loveSize = Math.min(64, W*0.065) * (1 + beatPulse*0.05);
+  drawTextSprite(textSprite('LO-O-OVE', softFont(loveSize), '#fff2fa', 'rgb(255,110,210)'), cx, H*0.20, loveSize, a*0.96, 0);
+  /* 漂浮公式 */
+  const formulas = [
+    {x:0.16, y:0.42, tx:'LOVE = ∫₀^∞ (you · me) dt'},
+    {x:0.16, y:0.66, tx:'lim (me → you) = ∞'},
+    {x:0.84, y:0.42, tx:'(x²+y²−1)³ = x²y³'},
+    {x:0.84, y:0.66, tx:'if(you == free) me.trapped();'}
+  ];
+  for(let i = 0; i < formulas.length; i++){
+    const f = formulas[i];
+    const fs = Math.min(15, W*0.016);
+    drawTextSprite(textSprite(f.tx, fitFont(fs), rgb('rgb(190,210,255)', 0.75), null), W*f.x, H*f.y, fs, a*(0.5 + 0.3*Math.sin(t*1.3+i)), 0);
+  }
+  /* 被困住的点 / 自由的点 */
+  const tt = t*0.8;
+  const den = 1 + Math.sin(tt)*Math.sin(tt);
+  const px = cx + Math.cos(tt)/den*S, py = cy + Math.sin(tt)*Math.cos(tt)/den*S;
+  drawGlow(px, py, 10, 'rgb(255,140,220)', a*0.8);
+  if(t > 8){
+    const freeX = W*0.5 + Math.sin(t*0.7)*W*0.2, freeY = H*0.78 + Math.cos(t*0.5)*30;
+    drawGlow(freeX, freeY, 8, 'rgb(140,220,255)', a*0.5);
+    ctx.fillStyle = rgb('rgb(255,255,255)', a*0.6); ctx.font = fitFont(11);
+    ctx.textAlign = 'center'; ctx.fillText('free', freeX, freeY+16);
+    ctx.fillText('trapped', px, py+18); ctx.textAlign = 'left';
+  }
+  drawTextSprite(textSprite('(⁄ ⁄•⁄ω⁄•⁄ ⁄)', softFont(16), 'rgb(255,200,230)', null), W*0.82, H*0.80, 18, a*0.65, Math.sin(t)*0.1);
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 12 · 03:11.36 - 03:25.81  星轨 / 被困在爱里
+========================================================= */
+function renderOrbit(t, a){
+  ctx.save();
+  bg('#020310', a);
+  const cx = W/2, cy = H/2, S = Math.min(W,H)*0.37;
+  drawGlow(cx, cy, S*0.9, 'rgb(80,90,190)', a*0.20);
+  drawGlow(cx, cy, S*0.45, 'rgb(255,110,190)', a*0.14);
+  /* 星野 */
+  for(let i = 0; i < STARS.length; i++){
+    const st = STARS[i];
+    const x = st.x*W + Math.sin(t*0.2 + i)*2;
+    const y = st.y*H + Math.cos(t*0.17 + i)*2;
+    const tw = 0.25 + 0.75*Math.abs(Math.sin(t*st.sp*2 + st.tw));
+    ctx.fillStyle = rgb('rgb(220,230,255)', a*tw*0.5);
+    ctx.fillRect(x, y, st.z*2.2, st.z*2.2);
+  }
+  /* 流星 */
+  for(let i = 0; i < 3; i++){
+    const k = fract(t*0.09 + i*0.37);
+    if(k > 0.04 && k < 0.28){
+      const sx = W*(0.2 + i*0.3) + k*W*1.3, sy = H*(0.08 + i*0.1) + k*W*0.35;
+      ctx.strokeStyle = rgb('rgb(180,220,255)', a*(1-(k-0.04)/0.24)*0.6);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx-40, sy-14); ctx.stroke();
+    }
+  }
+  /* 心形轨道 */
+  ctx.strokeStyle = rgb('rgb(150,150,255)', a*0.18); ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for(let i = 0; i < HEART_PTS.length; i++){
+    const p = HEART_PTS[i];
+    const x = cx+p.x*S, y = cy+p.y*S;
+    if(i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.closePath(); ctx.stroke();
+  /* 两个被困住的星体 */
+  const N = HEART_PTS.length;
+  const speed = 0.13 + beatPulse*0.04;
+  const i1 = Math.floor((t*speed)%1*N) % N;
+  const i2 = (i1 + Math.floor(N/2)) % N;
+  const bodies = [i1, i2];
+  for(let b = 0; b < bodies.length; b++){
+    const idx = bodies[b];
+    const p = HEART_PTS[idx];
+    const x = cx + p.x*S, y = cy + p.y*S;
+    const col = b === 0 ? 'rgb(255,120,210)' : 'rgb(110,220,255)';
+    /* 拖尾 */
+    for(let q = 1; q <= 8; q++){
+      const p2 = HEART_PTS[(idx - q*3 + N) % N];
+      ctx.fillStyle = rgb(col, a*q*0.025);
+      ctx.beginPath(); ctx.arc(cx+p2.x*S, cy+p2.y*S, 2.2 - q*0.16, 0, TAU); ctx.fill();
+    }
+    drawGlow(x, y, 13, col, a*0.7);
+  }
+  drawGlow(cx, cy, S*0.08, 'rgb(255,240,250)', a*0.8);
+  /* 猫猫宇航员 + 奶茶 */
+  drawTextSprite(textSprite('(=^･ω･^=)', softFont(15), 'rgb(255,210,230)', null), W*0.14 + Math.sin(t*0.4)*10, H*0.22 + Math.cos(t*0.5)*8, 17, a*0.7, 0);
+  const tea = emojiSprite('🧋', 24);
+  ctx.save(); ctx.globalAlpha = a*0.55; ctx.translate(W*0.86 + Math.cos(t*0.3)*10, H*0.18 + Math.sin(t*0.4)*8);
+  ctx.rotate(Math.sin(t*0.6)*0.2); ctx.drawImage(tea, -12, -12, 24, 24); ctx.restore();
+  ctx.restore();
+}
+
+/* =========================================================
+   SCENE 13 · 03:25.81 - 结束  关机
+========================================================= */
+function renderShutdown(t, a){
+  ctx.save();
+  bg('#000000', a);
+  const cx = W/2, cy = H/2;
+  const collapse = smooth(clamp((t-2.6)/0.5, 0, 1));
+  if(collapse < 1){
+    const sy = 1 - collapse;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, Math.max(0.008, sy));
+    ctx.translate(-cx, -cy);
+    ctx.font = fitFont(Math.min(22, W*0.026));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if(t < 0.7){
+      ctx.fillStyle = rgb('rgb(255,90,150)', a*0.95);
+      ctx.fillText('> EXECUTION', cx, cy-8);
+    } else if(t < 1.6){
+      ctx.fillStyle = rgb('rgb(130,240,190)', a*0.8);
+      ctx.fillText('> process exited with code 0', cx, cy-8);
+    } else if(t < 2.6){
+      ctx.fillStyle = rgb('rgb(120,180,255)', a*0.75);
+      ctx.fillText('> shutdown -h now', cx, cy-8);
+    } else {
+      ctx.fillStyle = rgb('rgb(255,255,255)', a*0.6);
+      ctx.fillText('█', cx, cy-8);
+    }
+    ctx.restore();
+    if(collapse > 0.1){
+      ctx.fillStyle = rgb('rgb(255,255,255)', a*(1-collapse)*0.9);
+      ctx.fillRect(0, cy-1, W, 2);
+    }
+  } else {
+    ctx.fillStyle = rgb('rgb(140,160,200)', a*0.30); ctx.font = fitFont(12);
+    ctx.textAlign = 'center';
+    ctx.fillText('world.execute(me); // return 0;', cx, cy-10);
+    ctx.fillStyle = rgb('rgb(255,170,210)', a*0.38); ctx.font = softFont(15);
+    ctx.fillText('(˘ω˘) zzZ', cx, cy+14);
+    ctx.textAlign = 'left';
+    const tw = 0.3 + 0.3*Math.sin(t*2.1);
+    drawGlow(cx, H*0.82, 5 + tw*6, 'rgb(110,200,255)', a*0.25);
+  }
+  ctx.restore();
+}
+
+/* ============ 覆盖 bg：让全局 alpha 正确参与场景淡入淡出 ============ */
+bg = function(color, alpha){
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, W, H);
+};
+
+let scanPattern = null, noisePattern = null;
+scanPattern = ctx.createPattern(scanCanvas, 'repeat');
+noisePattern = ctx.createPattern(noiseCanvas, 'repeat');
+
+/* ============ 场景时间轴 ============ */
+const SCENES = [
+  {start:0.00,   end:15.90,  render:renderBoot,      fx:'glitch'},
+  {start:15.90,  end:29.70,  render:renderCompile,   fx:'fade'},
+  {start:29.70,  end:44.45,  render:renderGeometry,  fx:'flash'},
+  {start:44.45,  end:59.22,  render:renderElectric,  fx:'iris'},
+  {start:59.22,  end:74.04,  render:renderNeural,    fx:'heart'},
+  {start:74.04,  end:88.59,  render:renderCute,      fx:'wipe'},
+  {start:88.59,  end:103.49, render:renderDual,      fx:'fade'},
+  {start:103.49, end:125.70, render:renderShatter,   fx:'glitch'},
+  {start:125.70, end:147.65, render:renderError,     fx:'flash'},
+  {start:147.65, end:162.62, render:renderExecution, fx:'fade'},
+  {start:162.62, end:177.24, render:renderRebuild,   fx:'wipe'},
+  {start:177.24, end:191.36, render:renderEquations, fx:'fade'},
+  {start:191.36, end:205.81, render:renderOrbit,     fx:'fade'},
+  {start:205.81, end:99999,  render:renderShutdown,  fx:null}
+];
+const OVERLAP = 1.25, HALF = OVERLAP / 2;
+
+function sceneIndexAt(t){
+  for(let i = SCENES.length - 1; i >= 0; i--){
+    if(t >= SCENES[i].start - 0.001) return i;
+  }
+  return 0;
+}
+function findTransition(t){
+  for(let i = 0; i < SCENES.length - 1; i++){
+    const b = SCENES[i+1].start;
+    if(t >= b - HALF && t <= b + HALF){
+      return {i: i, k: clamp((t - (b - HALF)) / OVERLAP, 0, 1)};
+    }
+  }
+  return null;
+}
+
+function syntheticGlitch(k, t){
+  const pk = Math.sin(Math.PI * k);
+  if(pk <= 0.03) return;
+  ctx.save();
+  const seed = Math.floor(t * 18);
+  for(let n = 0; n < 9; n++){
+    const y = hash(n*13.7 + seed) * H;
+    const h = 2 + hash(n*7.1 + seed) * 13;
+    ctx.fillStyle = (n % 2) ? 'rgba(255,0,125,' + (pk*0.18) + ')' : 'rgba(0,235,255,' + (pk*0.18) + ')';
+    ctx.fillRect(0, y, W, h);
+  }
+  const off = pk * 20;
+  for(let n = 0; n < 5; n++){
+    const y = hash(n*3.3 + seed) * H;
+    ctx.fillStyle = 'rgba(0,0,0,' + (pk*0.38) + ')';
+    ctx.fillRect((n % 2 ? off : -off), y, W*0.32, 2 + hash(n*5.9 + seed)*10);
+  }
+  ctx.restore();
+}
+
+function applyTransition(i, j, k, t){
+  const prev = SCENES[i], next = SCENES[j];
+  const fx = prev.fx || 'fade';
+  const pt = clamp(t - prev.start, 0, Math.max(0.001, prev.end - prev.start));
+  const nt = clamp(t - next.start, 0, Math.max(0.001, next.end - next.start));
+  if(fx === 'fade' || fx === 'flash' || fx === 'glitch'){
+    prev.render(pt, 1 - k);
+    next.render(nt, k);
+  } else {
+    prev.render(pt, 1);
+    ctx.save();
+    if(fx === 'iris'){
+      const rr = Math.max(6, Math.hypot(W, H) * 0.66 * smooth(k));
+      ctx.beginPath(); ctx.arc(W/2, H/2, rr, 0, TAU); ctx.clip();
+    } else if(fx === 'heart'){
+      const hs = Math.min(W, H) * (0.04 + 0.92 * smooth(k));
+      pathHeartShape(hs, 0, W/2, H/2); ctx.clip();
+    } else if(fx === 'wipe'){
+      ctx.beginPath(); ctx.rect(0, 0, W * smooth(k), H); ctx.clip();
+    }
+    next.render(nt, 1);
+    ctx.restore();
+  }
+  /* 场景切换强调层 */
+  if(fx === 'flash'){
+    const fa = Math.sin(Math.PI * k);
+    if(fa > 0.02){
+      ctx.fillStyle = 'rgba(255,255,255,' + (fa*0.78).toFixed(3) + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+  } else if(fx === 'glitch'){
+    syntheticGlitch(k, t);
+  } else if(fx === 'iris' || fx === 'heart' || fx === 'wipe'){
+    const ep = Math.sin(Math.PI * k);
+    ctx.save();
+    ctx.globalAlpha = ep * 0.8;
+    ctx.strokeStyle = '#dffcff'; ctx.lineWidth = 2;
+    if(fx === 'iris'){
+      const rr = Math.max(6, Math.hypot(W, H) * 0.66 * smooth(k));
+      ctx.beginPath(); ctx.arc(W/2, H/2, rr, 0, TAU); ctx.stroke();
+    } else if(fx === 'heart'){
+      const hs = Math.min(W, H) * (0.04 + 0.92 * smooth(k));
+      pathHeartShape(hs, 0, W/2, H/2); ctx.stroke();
+    } else {
+      const x = W * smooth(k);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function render(t){
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, W, H);
+  const tr = findTransition(t);
+  if(tr){
+    applyTransition(tr.i, tr.i+1, tr.k, t);
+  } else {
+    const si = sceneIndexAt(t);
+    const sc = SCENES[si];
+    const lt = clamp(t - sc.start, 0, Math.max(0.001, sc.end - sc.start));
+    sc.render(lt, 1);
+  }
+}
+
+function drawGlobalFx(t){
+  if(scanPattern){
+    ctx.save(); ctx.globalAlpha = 0.13; ctx.fillStyle = scanPattern; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+  if(noisePattern){
+    const nx = (Math.random() * 256) | 0, ny = (Math.random() * 256) | 0;
+    ctx.save(); ctx.globalAlpha = 0.05; ctx.fillStyle = noisePattern;
+    ctx.translate(-nx, -ny); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+  }
+  if(vignetteCanvas){
+    ctx.save(); ctx.globalAlpha = 0.72; ctx.drawImage(vignetteCanvas, 0, 0, W, H); ctx.restore();
+  }
+}
+
+/* ============ 歌词渲染 ============ */
+const lyricSpriteCache = new Map();
+function makeLyricSprite(line){
+  let c = lyricSpriteCache.get(line);
+  if(c) return c;
+  const font = softFont(30);
+  c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  g.font = font;
+  const parts = String(line).split(/(\b[A-Z]{2,}\b)/g);
+  let total = 0;
+  for(const p of parts) if(p) total += g.measureText(p).width;
+  c.width = Math.ceil(total) + 48;
+  c.height = 64;
+  g.font = font; g.textAlign = 'left'; g.textBaseline = 'middle';
+  let x = 24;
+  for(const p of parts){
+    if(!p) continue;
+    const upper = /^[A-Z]{2,}$/.test(p);
+    g.fillStyle = upper ? 'rgb(255,105,210)' : 'rgb(245,248,255)';
+    g.shadowColor = upper ? 'rgba(255,80,190,0.65)' : 'rgba(0,0,0,0.75)';
+    g.shadowBlur = 8;
+    g.fillText(p, x, c.height/2);
+    x += g.measureText(p).width;
+  }
+  lyricSpriteCache.set(line, c);
+  return c;
+}
+let lastLyricIndex = -1;
+function drawLyrics(t){
+  const li = lyricIndexAt(t);
+  if(li < 0) return;
+  const spr = makeLyricSprite(LYRICS[li].text);
+  let h = 40;
+  let dw = spr.width * (h / spr.height);
+  const maxW = W * 0.88;
+  if(dw > maxW){ h *= maxW / dw; dw = maxW; }
+  const pop = 1 + linePulse * 0.05;
+  const y = H - 62;
+  ctx.save();
+  ctx.globalAlpha = 0.42;
+  ctx.fillStyle = '#000000';
+  pathRoundRect(W/2 - dw*pop/2 - 16, y - h*pop/2 - 6, dw*pop + 32, h*pop + 12, 14);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = 0.97;
+  ctx.translate(W/2, y);
+  const sc = h * pop / spr.height;
+  ctx.drawImage(spr, -spr.width*sc/2, -h*pop/2, spr.width*sc, h*pop);
+  ctx.restore();
+}
+
+function drawProgress(t){
+  const dur = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 211.96;
+  const p = clamp(t / dur, 0, 1);
+  ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(0, 0, W, 2);
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, 'rgba(110,240,255,0.8)');
+  grad.addColorStop(1, 'rgba(255,105,210,0.8)');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W * p, 2);
+}
+
+/* ============ 节拍检测 ============ */
+let energyFill = 0;
+let fallbackBeatIndex = -1;
+function fallbackBeat(t){
+  const interval = 60 / 128;
+  const idx = Math.floor(t / interval);
+  if(idx !== fallbackBeatIndex && t > 0.25){
+    fallbackBeatIndex = idx;
+    beatPulse = 1;
+  }
+}
+function updateBeat(dt, now, t){
+  if(analyser && freqData && started){
+    try{
+      analyser.getByteFrequencyData(freqData);
+      const n = Math.min(28, freqData.length);
+      let sum = 0;
+      for(let i = 1; i < n; i++) sum += freqData[i];
+      const e = sum / ((n - 1) * 255);
+      bassLevel += (e - bassLevel) * (1 - Math.exp(-dt * 9));
+      if(energyFill < energyHist.length){
+        energyHist[energyFill] = e; energyFill++;
+      } else {
+        energyHist[energyPos] = e; energyPos = (energyPos + 1) % energyHist.length;
+        let avg = 0;
+        for(let i = 0; i < energyHist.length; i++) avg += energyHist[i];
+        avg /= energyHist.length;
+        if(e > avg * 1.42 + 0.025 && e > 0.09 && now - lastBeatAt > 245){
+          beatPulse = 1; lastBeatAt = now;
+        }
+      }
+    }catch(err){ analyser = null; }
+  } else if(started){
+    fallbackBeat(t);
+  }
+  beatPulse = Math.max(0, beatPulse - dt * 3.4);
+  linePulse = Math.max(0, linePulse - dt * 2.7);
+}
+
+/* ============ 音频与交互 ============ */
+function initAudioGraph(){
+  if(audioCtx || audioFailed) return;
+  /* [split_audio.py 注入] 外链音频 + file:// 的跨源限制：
+     浏览器会把 file:// 媒体当作跨源，createMediaElementSource() 不报错，
+     但频谱恒为 0 且输出静音。此时放弃 Web Audio，让 <audio> 走原生播放，
+     节拍检测自动回退到 fallbackBeat()。用 http 打开则不受影响。 */
+  if(AUDIO_SRC.indexOf('data:') !== 0 && location.protocol === 'file:'){
+    analyser = null;
+    return;
+  }
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    audioCtx = new AC();
+    const src = audioCtx.createMediaElementSource(audio);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.75;
+    src.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+  }catch(err){
+    analyser = null;
+  }
+}
+function showError(msg){
+  audioFailed = true;
+  errMsg.textContent = msg || '音频加载失败，请重新打开文件。';
+  errorEl.classList.remove('hidden');
+}
+function startMV(){
+  if(started || audioFailed) return;
+  started = true;
+  startEl.classList.add('hidden');
+  initAudioGraph();
+  const pr = audio.play();
+  if(pr && pr.then) pr.catch(function(e){ showError('无法播放：' + e.name + '。请点击后重试。'); });
+}
+function replay(){
+  replayEl.classList.add('hidden');
+  audioEnded = false;
+  audio.currentTime = 0;
+  audio.play().catch(function(){});
+}
+function togglePlay(){
+  if(!started){ startMV(); return; }
+  if(audioEnded){ replay(); return; }
+  if(audio.paused){ audio.play().catch(function(){}); } else { audio.pause(); }
+}
+function fmtTime(s){
+  if(!isFinite(s) || s < 0) s = 0;
+  s = Math.floor(s);
+  const m = Math.floor(s / 60), ss = (s % 60);
+  return m + ':' + (ss < 10 ? '0' : '') + ss;
+}
+function updateUI(){
+  const d = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 0;
+  timeEl.textContent = fmtTime(audio.currentTime) + ' / ' + (d ? fmtTime(d) : '--:--');
+  btnPlay.textContent = audio.paused ? '▶' : '⏸';
+}
+startEl.addEventListener('click', startMV);
+replayEl.addEventListener('click', replay);
+btnPlay.addEventListener('click', function(e){ e.stopPropagation(); togglePlay(); });
+window.addEventListener('keydown', function(e){
+  if(e.code === 'Space'){
+    e.preventDefault();
+    if(!started || audioEnded) replay(); else togglePlay();
+  } else if(e.key === 'f' || e.key === 'F'){
+    if(document.fullscreenElement){ document.exitFullscreen(); }
+    else if(document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen(); }
+  } else if(e.key === 'm' || e.key === 'M'){
+    audio.muted = !audio.muted;
+  }
+});
+canvas.addEventListener('dblclick', function(){
+  if(document.fullscreenElement){ document.exitFullscreen(); }
+  else if(document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen(); }
+});
+audio.addEventListener('play', updateUI);
+audio.addEventListener('pause', updateUI);
+audio.addEventListener('loadedmetadata', updateUI);
+audio.addEventListener('durationchange', updateUI);
+audio.addEventListener('ended', function(){
+  audioEnded = true;
+  replayEl.classList.remove('hidden');
+  updateUI();
+});
+audio.addEventListener('error', function(){
+  showError('音频解码失败：' + (audio.error ? audio.error.code : 'unknown') + '。请使用 Chrome / Edge 打开。');
+});
+
+/* ============ 主循环 ============ */
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  lastFrame = now;
+  let t = audio.currentTime || 0;
+  if(!isFinite(t)) t = 0;
+  updateBeat(dt, now, t);
+  const li = lyricIndexAt(t);
+  if(li !== lastLyricIndex){
+    lastLyricIndex = li;
+    if(li >= 0) linePulse = 1;
+  }
+  render(t);
+  drawGlobalFx(t);
+  drawLyrics(t);
+  drawProgress(t);
+  if(now - lastUIUpdate > 220){ updateUI(); lastUIUpdate = now; }
+}
+let lastUIUpdate = 0;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
+
