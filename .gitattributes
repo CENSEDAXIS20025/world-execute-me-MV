@@ -1,0 +1,25 @@
+# GitHub 语言统计覆盖规则
+#
+# 背景：仓库的语言条原本显示 "HTML 99.8% / Other 0.2%"，这个数字是失真的。
+#
+# 原因：根目录的 world.execute(me)-MV.html 有 11.4 MB，其中 11.37 MB（99.4%）
+# 是内嵌的 MP3 —— 一段 base64 文本，不是 HTML 源码。它是构建产物：由
+# tools/build_html.py 把分段文件拼起来、再把音频注入占位符生成。Linguist
+# 按字节统计，于是这段内嵌二进制把语言条整个撑成了 "HTML"。
+#
+# 标记为 generated 后（官方语义：排除语言统计 + 在 diff 中折叠），
+# 语言条反映的是真正的源码构成：
+#     HTML ~67% · Python ~20% · JavaScript ~8% · PowerShell ~5%
+#
+# 想还原成 GitHub 的原始统计，删掉这个文件即可。
+
+# 开头的斜杠很关键：只匹配仓库根目录的那一个文件。
+# 不加斜杠时，gitattributes 的匹配规则和 .gitignore 一样会命中任意层级，
+# 会把 external-audio/ 里那份 70 KB 的真源码一起排除掉 —— 那是不对的，
+# 那份拆解版 HTML 是货真价实的源码，应当计入统计。
+/world.execute(me)-MV.html  linguist-generated
+
+# 会话日志是数据不是源码。Linguist 目前不识别 .jsonl，所以本来就不计入；
+# 这里显式声明，以免将来 Linguist 支持 JSON Lines 后 1.6 MB 的日志反过来
+# 压掉真正的代码。
+session.v4.jsonl            linguist-vendored
